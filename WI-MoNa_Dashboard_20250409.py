@@ -597,311 +597,309 @@ if uploaded_mona_files:
         
             
         if not (position_ausserhalb_aktiv or obere_toleranz_aktiv or untere_toleranz_aktiv or geschwindigkeit_aktiv):
-            st.warning("Bitte mindestens eine Fehlerbedingung aktivieren.")
-        else:
-
-            # Fehlerlogik & Filter
-            # Sicherstellen, dass timestamp korrekt ist
-            df_filtered["timestamp"] = pd.to_datetime(df_filtered["timestamp"], errors="coerce")
-            
-            fehler_daten = []
-            fehler_zeiträume = []
-            gueltige_zeilen = []
-            
-            # Durch alle Zeilen gehen und Fehler prüfen
+            st.info("ℹ️ Es sind keine Fehlerbedingungen aktiv – es wird nur die reine Baggerdauer ausgewertet.")
+        
+        # Fehlerlogik & Filter – immer ausführen
+        df_filtered["timestamp"] = pd.to_datetime(df_filtered["timestamp"], errors="coerce")
+        
+        
+        fehler_daten = []
+        fehler_zeiträume = []
+        gueltige_zeilen = []
+        
+        if position_ausserhalb_aktiv or obere_toleranz_aktiv or untere_toleranz_aktiv or geschwindigkeit_aktiv:
             for _, row in df_filtered.iterrows():
                 grund = None
                 bnr = row["Baggerfeld"]
                 timestamp = row["timestamp"]
-            
-                # Position prüfen
+        
                 if position_ausserhalb_aktiv and row["Status"] == 2 and (
                     pd.isna(row["Solltiefe_BB"]) or pd.isna(row["Solltiefe_SB"])
                 ):
                     grund = "Position"
-            
-                # Obere Toleranz prüfen
+        
                 if grund is None and obere_toleranz_aktiv:
                     if pd.notna(row["Abs_Balkentiefe"]) and pd.notna(row["Solltiefe"]):
                         if row["Abs_Balkentiefe"] > row["Solltiefe"] + toleranz_oben:
                             grund = "Obere Toleranz"
-            
-                # Untere Toleranz prüfen
+        
                 if grund is None and untere_toleranz_aktiv:
                     if pd.notna(row["Abs_Balkentiefe"]) and pd.notna(row["Solltiefe"]):
                         if row["Abs_Balkentiefe"] < row["Solltiefe"] - toleranz_unten:
                             grund = "Untere Toleranz"
-            
-                # Geschwindigkeit prüfen
+        
                 if grund is None and geschwindigkeit_aktiv:
                     if row["Status"] == 2:
                         if pd.isna(row["Geschwindigkeit"]) or pd.to_numeric(row["Geschwindigkeit"], errors="coerce") > max_geschwindigkeit:
                             grund = "Geschwindigkeit"
-            
+        
                 if grund:
                     fehler_zeiträume.append({
                         "timestamp": timestamp,
                         "Baggerfeld": bnr,
                         "Fehlgrund": grund
                     })
-                    fehler_daten.append([bnr, grund])  # 👈 HIER DAZU!
+                    fehler_daten.append([bnr, grund])
                 else:
                     gueltige_zeilen.append(row)
+        else:
+            # 👈 NEU: Wenn keine Fehlerprüfung aktiv → einfach alle Status==2 nehmen
+            gueltige_zeilen = df_filtered[df_filtered["Status"] == 2].to_dict(orient="records")
             
-            # Gültige Datenframe für weitere Auswertungen
-            df_gueltig = pd.DataFrame(gueltige_zeilen)
-            df_gueltig = df_gueltig[df_gueltig["Status"] == 2]
-            
-            # === Fehlerzeiträume gruppieren ===
-            df_fehler = pd.DataFrame(fehler_zeiträume)
-            if not df_fehler.empty and "timestamp" in df_fehler.columns:
-                df_fehler.sort_values(by="timestamp", inplace=True)
-            
-            gruppen = []
-            if not df_fehler.empty:
-                
-                start = df_fehler.iloc[0]["timestamp"]
-                end = start
-                current_grund = df_fehler.iloc[0]["Fehlgrund"]
-                current_baggerfeld = df_fehler.iloc[0]["Baggerfeld"]
-                anzahl = 1  # Startwert für die Zählung im ersten Fehlerzeitraum
-                for i in range(1, len(df_fehler)):
-                    row = df_fehler.iloc[i]
-                    if (
-                        row["Fehlgrund"] == current_grund and
-                        row["Baggerfeld"] == current_baggerfeld and
-                        (row["timestamp"] - end).total_seconds() <= 15
-                    ):
-                        end = max(end, row["timestamp"])  # Absicherung bei gleichen Zeiten
-                        anzahl += 1  # ← NEU: erhöhen
-                    else:
-                        gruppen.append({
-                            "Baggerfeld": current_baggerfeld,
-                            "Startzeit": start,
-                            "Endzeit": end,
-                            "Dauer_raw": timedelta(seconds=anzahl * 10),
-                            "Dauer": (
-                                to_dezimalstunden(timedelta(seconds=anzahl * 10))
-                                if anzeigeformat == "Dezimalstunden"
-                                else to_hhmmss(timedelta(seconds=anzahl * 10))
-                            ),
-                            "Anzahl": anzahl,
-                            "Fehlgrund": current_grund
-                        })
-                        # Reset
-                        start = row["timestamp"]
-                        end = start
-                        current_grund = row["Fehlgrund"]
-                        current_baggerfeld = row["Baggerfeld"]
-                        anzahl = 1  # ← NEU: zurücksetzen
-    
-            
-                # Letzten Abschnitt anhängen
-                gruppen.append({
-                    "Baggerfeld": current_baggerfeld,
-                    "Startzeit": start,
-                    "Endzeit": end,
-                    "Dauer_raw": timedelta(seconds=anzahl * 10),
-                    "Dauer": (
-                        to_dezimalstunden(timedelta(seconds=anzahl * 10))
-                        if anzeigeformat == "Dezimalstunden"
-                        else to_hhmmss(timedelta(seconds=anzahl * 10))
-                    ),
-                    "Anzahl": anzahl,
-                    "Fehlgrund": current_grund
-                })
-            
-    
-    
-    
-                
-            st.markdown("<h3 style='font-size: 24px'>⏱️ Baggerzeiten je Baggerfeld</h3>", unsafe_allow_html=True)
+        # Gültige Datenframe für weitere Auswertungen
+        df_gueltig = pd.DataFrame(gueltige_zeilen)
+        df_gueltig = df_gueltig[df_gueltig["Status"] == 2]
         
-            if not df_gueltig.empty:
-                zeitraum_df = df_gueltig.groupby("Baggerfeld")["timestamp"].agg(["min", "max"]).reset_index()
-                zeitraum_df["Anzahl gültiger Zeilen"] = df_gueltig.groupby("Baggerfeld").size().values
-                zeitraum_df["delta"] = zeitraum_df["Anzahl gültiger Zeilen"] * 10  # in Sekunden
-                zeitraum_df["delta"] = pd.to_timedelta(zeitraum_df["delta"], unit="s")                
-                
-                zeitraum_df["Gesamtdauer"] = zeitraum_df["delta"].apply(
-                    lambda td: to_dezimalstunden(td) if anzeigeformat == "Dezimalstunden" else to_hhmmss(td)
-                )
-                fehler_df = pd.DataFrame(fehler_daten, columns=["Baggerfeld", "Fehler"])
-                fehler_matrix = pd.crosstab(fehler_df["Baggerfeld"], fehler_df["Fehler"]).reset_index()
+        # === Fehlerzeiträume gruppieren ===
+        df_fehler = pd.DataFrame(fehler_zeiträume)
+        if not df_fehler.empty and "timestamp" in df_fehler.columns:
+            df_fehler.sort_values(by="timestamp", inplace=True)
         
-                spalten_reihenfolge = ["Position", "Obere Toleranz", "Untere Toleranz", "Geschwindigkeit"]
-                for spalte in spalten_reihenfolge:
-                    if spalte not in fehler_matrix.columns:
-                        fehler_matrix[spalte] = 0
-                fehler_matrix = fehler_matrix[["Baggerfeld"] + spalten_reihenfolge]
-                fehler_matrix["Anzahl"] = fehler_matrix[spalten_reihenfolge].sum(axis=1)
-                fehler_matrix["Verworfen (Sekunden)"] = fehler_matrix["Anzahl"] * 10
-                
-                fehler_matrix["Dauer korrigiert"] = (
-                    zeitraum_df["delta"] - pd.to_timedelta(fehler_matrix["Verworfen (Sekunden)"], unit="s")
-                ).apply(
-                    lambda td: to_dezimalstunden(td) if anzeigeformat == "Dezimalstunden" else to_hhmmss(td)
-                )
-                                
-                # Zeitverlust
-                fehler_matrix["Zeitverlust"] = fehler_matrix["Verworfen (Sekunden)"].apply(
-                    lambda x: to_dezimalstunden(timedelta(seconds=int(x))) if anzeigeformat == "Dezimalstunden" else to_hhmmss(timedelta(seconds=int(x)))
-                )
-        
-                zeitraum_df.rename(columns={"min": "Beginn", "max": "Ende", "Baggerfeld": "Baggerfeld"}, inplace=True)
-                fehler_matrix.rename(columns={"Baggerfeld": "Baggerfeld"}, inplace=True)
-        
-                result = pd.merge(zeitraum_df[["Baggerfeld", "Beginn", "Ende", "Gesamtdauer"]], fehler_matrix, on="Baggerfeld", how="left").fillna(0)
-        
-                final_order = ["Baggerfeld", "Beginn", "Ende", "Gesamtdauer", "Dauer korrigiert", "Zeitverlust", "Anzahl"] + spalten_reihenfolge
-                #st.dataframe(result[final_order], use_container_width=True, hide_index=True)
-                # Summen berechnen
-                summen = {}
-                
-                # Zeitfelder in Sekunden
-                # Gesamtdauer stammt aus zeitraum_df["delta"]
-                gesamt_zeit = zeitraum_df["delta"].sum()
-                
-                # Verworfen = Anzahl * 10 Sek
-                #verworfen = result["Anzahl"].iloc[:-1].sum() * 10  # Letzte Zeile (Σ) nicht doppelt zählen!
-                verworfen = len(fehler_daten) * 10
-                delta_korrigiert = gesamt_zeit - timedelta(seconds=int(verworfen))
-                
-                summen["Gesamtdauer"] = (
-                    to_dezimalstunden(gesamt_zeit) if anzeigeformat == "Dezimalstunden" else to_hhmmss(gesamt_zeit)
-                )
-                summen["Dauer korrigiert"] = (
-                    to_dezimalstunden(delta_korrigiert) if anzeigeformat == "Dezimalstunden" else to_hhmmss(delta_korrigiert)
-                )
-                summen["Zeitverlust"] = (
-                    to_dezimalstunden(timedelta(seconds=int(verworfen)))
-                    if anzeigeformat == "Dezimalstunden"
-                    else to_hhmmss(timedelta(seconds=int(verworfen)))
-                )
-                
-                # Zahlenspalten summieren
-                summen["Anzahl"] = result["Anzahl"].sum()
-                for feld in ["Position", "Obere Toleranz", "Untere Toleranz", "Geschwindigkeit"]:
-                    summen[feld] = result[feld].sum() if feld in result.columns else 0
-                
-                # Dummy-Felder
-                summen["Baggerfeld"] = "Σ"
-                summen["Beginn"] = "-"
-                summen["Ende"] = "-"
-                
-                # Reihenfolge einhalten
-                summenzeile = pd.DataFrame([summen])[final_order]
-                
-                # Neue Tabelle mit Summenzeile
-                result_mit_summe = pd.concat([result[final_order], summenzeile], ignore_index=True)
-                
-                # Tabelle mit Summenzeile anzeigen
-                st.dataframe(result_mit_summe, use_container_width=True, hide_index=True)                
-                
-                excel_data_2 = convert_df_to_excel(result_mit_summe)
-                st.download_button(
-                    label="📥 Baggerzeiten als Excel herunterladen",
-                    data=excel_data_2,
-                    file_name="baggerzeiten.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-                
-      
-             # Ausgabe der gruppierten Fehlerzeiträume
-            df_gruppen = pd.DataFrame(gruppen)
-            #
-            if not df_gruppen.empty:
-                st.markdown("<h3 style='font-size: 24px'>📋 Zusammengefasste Fehlerzeiträume</h3>", unsafe_allow_html=True)
+        gruppen = []
+        if not df_fehler.empty:
             
-                # Summen berechnen
-                gesamt_anzahl = df_gruppen["Anzahl"].sum()
-                gesamt_dauer = df_gruppen["Dauer_raw"].sum()
-                gesamt_dauer_formatiert = (
-                    to_dezimalstunden(gesamt_dauer)
-                    if anzeigeformat == "Dezimalstunden"
-                    else to_hhmmss(gesamt_dauer)
-                )
-            
-                # Summenzeile anfügen
-                summenzeile = pd.DataFrame([{
-                    "Baggerfeld": "Σ",
-                    "Startzeit": "-",
-                    "Endzeit": "-",
-                    "Dauer": gesamt_dauer_formatiert,
-                    "Anzahl": gesamt_anzahl,
-                    "Fehlgrund": "-"
-                }])
-            
-                df_anzeige = pd.concat([df_gruppen.drop(columns=["Dauer_raw"]), summenzeile], ignore_index=True)
-            
-                st.dataframe(df_anzeige, use_container_width=True, hide_index=True)
-                excel_data_1 = convert_df_to_excel(df_anzeige)
-                st.download_button(
-                    label="📥 Fehlerzeiträume als Excel herunterladen",
-                    data=excel_data_1,
-                    file_name="fehlerzeitraeume.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-           
-             
-            else:
-                st.success("✅ Keine Fehlerzeiträume gefunden.")   
-            if fehler_daten:
-                st.markdown("<h3 style='font-size: 24px'>🧾 Zusammenfassung</h3>", unsafe_allow_html=True)
-                
-                # 🧮 Kompakte Übersicht aus den Summen aus "Baggerzeiten je Baggerfeld"
-                #st.markdown("<h3 style='font-size: 24px'>🧾 Zeitübersicht (Summen aus Baggerzeiten)</h3>", unsafe_allow_html=True)
-                
-                zeit_summen_df = pd.DataFrame([
-                    {
-                        "Kategorie": "Gesamtdauer",
-                        "Zeit": summen["Gesamtdauer"]
-                    },
-                    {
-                        "Kategorie": "Dauer korrigiert",
-                        "Zeit": summen["Dauer korrigiert"]
-                    },
-                    {
-                        "Kategorie": "Zeitverlust",
-                        "Zeit": summen["Zeitverlust"]
-                    }
-                ])
-                
-                st.dataframe(zeit_summen_df, use_container_width=True, hide_index=True)                
-                
-                fehler_df = pd.DataFrame(fehler_daten, columns=["Baggerfeld", "Fehler"])
-                fehler_counts = fehler_df["Fehler"].value_counts().rename_axis("Fehlerbedingung").reset_index(name="Anzahl")
-                fehler_counts["Zeitverlust"] = fehler_counts["Anzahl"].apply(
-                    lambda x: (
-                        to_dezimalstunden(timedelta(seconds=x*10))
-                        if anzeigeformat == "Dezimalstunden"
-                        else to_hhmmss(timedelta(seconds=x*10))
-                    )
-                )
-                
-                total_seconds = fehler_counts["Anzahl"].sum() * 10
-                gesamt = pd.DataFrame([{
-                    "Fehlerbedingung": "Gesamt",
-                    "Anzahl": fehler_counts["Anzahl"].sum(),
-                    "Zeitverlust": (
-                        to_dezimalstunden(timedelta(seconds=int(total_seconds)))
-                        if anzeigeformat == "Dezimalstunden"
-                        else to_hhmmss(timedelta(seconds=int(total_seconds)))
-                    )
-                }])
-                fehler_counts = pd.concat([fehler_counts, gesamt], ignore_index=True)
-                st.dataframe(fehler_counts, use_container_width=True, hide_index=True)
-                excel_data_3 = convert_df_to_excel(fehler_counts)
-                st.download_button(
-                    label="📥 Fehlerzusammenfassung als Excel herunterladen",
-                    data=excel_data_3,
-                    file_name="fehler_zusammenfassung.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+            start = df_fehler.iloc[0]["timestamp"]
+            end = start
+            current_grund = df_fehler.iloc[0]["Fehlgrund"]
+            current_baggerfeld = df_fehler.iloc[0]["Baggerfeld"]
+            anzahl = 1  # Startwert für die Zählung im ersten Fehlerzeitraum
+            for i in range(1, len(df_fehler)):
+                row = df_fehler.iloc[i]
+                if (
+                    row["Fehlgrund"] == current_grund and
+                    row["Baggerfeld"] == current_baggerfeld and
+                    (row["timestamp"] - end).total_seconds() <= 15
+                ):
+                    end = max(end, row["timestamp"])  # Absicherung bei gleichen Zeiten
+                    anzahl += 1  # ← NEU: erhöhen
+                else:
+                    gruppen.append({
+                        "Baggerfeld": current_baggerfeld,
+                        "Startzeit": start,
+                        "Endzeit": end,
+                        "Dauer_raw": timedelta(seconds=anzahl * 10),
+                        "Dauer": (
+                            to_dezimalstunden(timedelta(seconds=anzahl * 10))
+                            if anzeigeformat == "Dezimalstunden"
+                            else to_hhmmss(timedelta(seconds=anzahl * 10))
+                        ),
+                        "Anzahl": anzahl,
+                        "Fehlgrund": current_grund
+                    })
+                    # Reset
+                    start = row["timestamp"]
+                    end = start
+                    current_grund = row["Fehlgrund"]
+                    current_baggerfeld = row["Baggerfeld"]
+                    anzahl = 1  # ← NEU: zurücksetzen
 
-                
-            else:
-                st.success("✅ Keine fehlerhaften Datenpunkte gefunden.")
+        
+            # Letzten Abschnitt anhängen
+            gruppen.append({
+                "Baggerfeld": current_baggerfeld,
+                "Startzeit": start,
+                "Endzeit": end,
+                "Dauer_raw": timedelta(seconds=anzahl * 10),
+                "Dauer": (
+                    to_dezimalstunden(timedelta(seconds=anzahl * 10))
+                    if anzeigeformat == "Dezimalstunden"
+                    else to_hhmmss(timedelta(seconds=anzahl * 10))
+                ),
+                "Anzahl": anzahl,
+                "Fehlgrund": current_grund
+            })
+        
+
+
+
+            
+        st.markdown("<h3 style='font-size: 24px'>⏱️ Baggerzeiten je Baggerfeld</h3>", unsafe_allow_html=True)
+    
+        if not df_gueltig.empty:
+            zeitraum_df = df_gueltig.groupby("Baggerfeld")["timestamp"].agg(["min", "max"]).reset_index()
+            zeitraum_df["Anzahl gültiger Zeilen"] = df_gueltig.groupby("Baggerfeld").size().values
+            zeitraum_df["delta"] = zeitraum_df["Anzahl gültiger Zeilen"] * 10  # in Sekunden
+            zeitraum_df["delta"] = pd.to_timedelta(zeitraum_df["delta"], unit="s")                
+            
+            zeitraum_df["Gesamtdauer"] = zeitraum_df["delta"].apply(
+                lambda td: to_dezimalstunden(td) if anzeigeformat == "Dezimalstunden" else to_hhmmss(td)
+            )
+            fehler_df = pd.DataFrame(fehler_daten, columns=["Baggerfeld", "Fehler"])
+            fehler_matrix = pd.crosstab(fehler_df["Baggerfeld"], fehler_df["Fehler"]).reset_index()
+    
+            spalten_reihenfolge = ["Position", "Obere Toleranz", "Untere Toleranz", "Geschwindigkeit"]
+            for spalte in spalten_reihenfolge:
+                if spalte not in fehler_matrix.columns:
+                    fehler_matrix[spalte] = 0
+            fehler_matrix = fehler_matrix[["Baggerfeld"] + spalten_reihenfolge]
+            fehler_matrix["Anzahl"] = fehler_matrix[spalten_reihenfolge].sum(axis=1)
+            fehler_matrix["Verworfen (Sekunden)"] = fehler_matrix["Anzahl"] * 10
+            
+            fehler_matrix["Dauer korrigiert"] = (
+                zeitraum_df["delta"] - pd.to_timedelta(fehler_matrix["Verworfen (Sekunden)"], unit="s")
+            ).apply(
+                lambda td: to_dezimalstunden(td) if anzeigeformat == "Dezimalstunden" else to_hhmmss(td)
+            )
+                            
+            # Zeitverlust
+            fehler_matrix["Zeitverlust"] = fehler_matrix["Verworfen (Sekunden)"].apply(
+                lambda x: to_dezimalstunden(timedelta(seconds=int(x))) if anzeigeformat == "Dezimalstunden" else to_hhmmss(timedelta(seconds=int(x)))
+            )
+    
+            zeitraum_df.rename(columns={"min": "Beginn", "max": "Ende", "Baggerfeld": "Baggerfeld"}, inplace=True)
+            fehler_matrix.rename(columns={"Baggerfeld": "Baggerfeld"}, inplace=True)
+    
+            result = pd.merge(zeitraum_df[["Baggerfeld", "Beginn", "Ende", "Gesamtdauer"]], fehler_matrix, on="Baggerfeld", how="left").fillna(0)
+    
+            final_order = ["Baggerfeld", "Beginn", "Ende", "Gesamtdauer", "Dauer korrigiert", "Zeitverlust", "Anzahl"] + spalten_reihenfolge
+            #st.dataframe(result[final_order], use_container_width=True, hide_index=True)
+            # Summen berechnen
+            summen = {}
+            
+            # Zeitfelder in Sekunden
+            # Gesamtdauer stammt aus zeitraum_df["delta"]
+            gesamt_zeit = zeitraum_df["delta"].sum()
+            
+            # Verworfen = Anzahl * 10 Sek
+            #verworfen = result["Anzahl"].iloc[:-1].sum() * 10  # Letzte Zeile (Σ) nicht doppelt zählen!
+            verworfen = len(fehler_daten) * 10
+            delta_korrigiert = gesamt_zeit - timedelta(seconds=int(verworfen))
+            
+            summen["Gesamtdauer"] = (
+                to_dezimalstunden(gesamt_zeit) if anzeigeformat == "Dezimalstunden" else to_hhmmss(gesamt_zeit)
+            )
+            summen["Dauer korrigiert"] = (
+                to_dezimalstunden(delta_korrigiert) if anzeigeformat == "Dezimalstunden" else to_hhmmss(delta_korrigiert)
+            )
+            summen["Zeitverlust"] = (
+                to_dezimalstunden(timedelta(seconds=int(verworfen)))
+                if anzeigeformat == "Dezimalstunden"
+                else to_hhmmss(timedelta(seconds=int(verworfen)))
+            )
+            
+            # Zahlenspalten summieren
+            summen["Anzahl"] = result["Anzahl"].sum()
+            for feld in ["Position", "Obere Toleranz", "Untere Toleranz", "Geschwindigkeit"]:
+                summen[feld] = result[feld].sum() if feld in result.columns else 0
+            
+            # Dummy-Felder
+            summen["Baggerfeld"] = "Σ"
+            summen["Beginn"] = "-"
+            summen["Ende"] = "-"
+            
+            # Reihenfolge einhalten
+            summenzeile = pd.DataFrame([summen])[final_order]
+            
+            # Neue Tabelle mit Summenzeile
+            result_mit_summe = pd.concat([result[final_order], summenzeile], ignore_index=True)
+            
+            # Tabelle mit Summenzeile anzeigen
+            st.dataframe(result_mit_summe, use_container_width=True, hide_index=True)                
+            
+            excel_data_2 = convert_df_to_excel(result_mit_summe)
+            st.download_button(
+                label="📥 Baggerzeiten als Excel herunterladen",
+                data=excel_data_2,
+                file_name="baggerzeiten.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
+  
+         # Ausgabe der gruppierten Fehlerzeiträume
+        df_gruppen = pd.DataFrame(gruppen)
+        #
+        if not df_gruppen.empty:
+            st.markdown("<h3 style='font-size: 24px'>📋 Zusammengefasste Fehlerzeiträume</h3>", unsafe_allow_html=True)
+        
+            # Summen berechnen
+            gesamt_anzahl = df_gruppen["Anzahl"].sum()
+            gesamt_dauer = df_gruppen["Dauer_raw"].sum()
+            gesamt_dauer_formatiert = (
+                to_dezimalstunden(gesamt_dauer)
+                if anzeigeformat == "Dezimalstunden"
+                else to_hhmmss(gesamt_dauer)
+            )
+        
+            # Summenzeile anfügen
+            summenzeile = pd.DataFrame([{
+                "Baggerfeld": "Σ",
+                "Startzeit": "-",
+                "Endzeit": "-",
+                "Dauer": gesamt_dauer_formatiert,
+                "Anzahl": gesamt_anzahl,
+                "Fehlgrund": "-"
+            }])
+        
+            df_anzeige = pd.concat([df_gruppen.drop(columns=["Dauer_raw"]), summenzeile], ignore_index=True)
+        
+            st.dataframe(df_anzeige, use_container_width=True, hide_index=True)
+            excel_data_1 = convert_df_to_excel(df_anzeige)
+            st.download_button(
+                label="📥 Fehlerzeiträume als Excel herunterladen",
+                data=excel_data_1,
+                file_name="fehlerzeitraeume.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+       
+         
+        else:
+            st.success("✅ Keine Fehlerzeiträume gefunden.")   
+        if fehler_daten:
+            st.markdown("<h3 style='font-size: 24px'>🧾 Zusammenfassung</h3>", unsafe_allow_html=True)
+            
+            # 🧮 Kompakte Übersicht aus den Summen aus "Baggerzeiten je Baggerfeld"
+            #st.markdown("<h3 style='font-size: 24px'>🧾 Zeitübersicht (Summen aus Baggerzeiten)</h3>", unsafe_allow_html=True)
+            
+            zeit_summen_df = pd.DataFrame([
+                {
+                    "Kategorie": "Gesamtdauer",
+                    "Zeit": summen["Gesamtdauer"]
+                },
+                {
+                    "Kategorie": "Dauer korrigiert",
+                    "Zeit": summen["Dauer korrigiert"]
+                },
+                {
+                    "Kategorie": "Zeitverlust",
+                    "Zeit": summen["Zeitverlust"]
+                }
+            ])
+            
+            st.dataframe(zeit_summen_df, use_container_width=True, hide_index=True)                
+            
+            fehler_df = pd.DataFrame(fehler_daten, columns=["Baggerfeld", "Fehler"])
+            fehler_counts = fehler_df["Fehler"].value_counts().rename_axis("Fehlerbedingung").reset_index(name="Anzahl")
+            fehler_counts["Zeitverlust"] = fehler_counts["Anzahl"].apply(
+                lambda x: (
+                    to_dezimalstunden(timedelta(seconds=x*10))
+                    if anzeigeformat == "Dezimalstunden"
+                    else to_hhmmss(timedelta(seconds=x*10))
+                )
+            )
+            
+            total_seconds = fehler_counts["Anzahl"].sum() * 10
+            gesamt = pd.DataFrame([{
+                "Fehlerbedingung": "Gesamt",
+                "Anzahl": fehler_counts["Anzahl"].sum(),
+                "Zeitverlust": (
+                    to_dezimalstunden(timedelta(seconds=int(total_seconds)))
+                    if anzeigeformat == "Dezimalstunden"
+                    else to_hhmmss(timedelta(seconds=int(total_seconds)))
+                )
+            }])
+            fehler_counts = pd.concat([fehler_counts, gesamt], ignore_index=True)
+            st.dataframe(fehler_counts, use_container_width=True, hide_index=True)
+            excel_data_3 = convert_df_to_excel(fehler_counts)
+            st.download_button(
+                label="📥 Fehlerzusammenfassung als Excel herunterladen",
+                data=excel_data_3,
+                file_name="fehler_zusammenfassung.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            
+        else:
+            st.success("✅ Keine fehlerhaften Datenpunkte gefunden.")
         
         
 # --- Info anzeigen, falls keine Daten vorhanden sind    
