@@ -50,7 +50,7 @@ def convert_df_to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Daten')
     return output.getvalue()
     
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="WI-MoNa Dashboard - MvdK", layout="wide")
 st.title("📈 WI-MoNa Dashboard - MvdK")
 
 #=== Datei-Upload im Sidebar =====================================================================================
