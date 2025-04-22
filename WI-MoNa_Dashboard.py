@@ -59,6 +59,8 @@ st.title("📈 WI-MoNa Dashboard - MvdK")
 st.sidebar.header("📂 Datei-Upload")
 uploaded_mona_files = st.sidebar.file_uploader("MoNa-Dateien (.txt)", type=["txt"], accept_multiple_files=True)
 uploaded_xml_files = st.sidebar.file_uploader("Baggerfeldgrenzen (XML mit Namespace)", type=["xml"], accept_multiple_files=True)
+xml_status = st.sidebar.empty()
+
 
 
 #=== Bedingungen / Parameter im Sidebar ==========================================================================
@@ -147,7 +149,7 @@ if uploaded_mona_files:
             except Exception as e:
                 st.sidebar.warning(f"{uploaded_xml.name} konnte nicht geladen werden: {e}")
     
-        st.sidebar.success(f"{len(baggerfelder)} Baggerfelder geladen")
+        xml_status.success(f"{len(baggerfelder)} Baggerfelder geladen")
 
 
 #=== Normalisierung der Rechtswerte (z. B. Entfernen der Zonenkennung bei UTM) ===================================
