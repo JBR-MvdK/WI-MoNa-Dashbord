@@ -61,15 +61,7 @@ uploaded_mona_files = st.sidebar.file_uploader("MoNa-Dateien (.txt)", type=["txt
 uploaded_xml_files = st.sidebar.file_uploader("Baggerfeldgrenzen (XML mit Namespace)", type=["xml"], accept_multiple_files=True)
 xml_status = st.sidebar.empty()
 
-
-
-#=== Bedingungen / Parameter im Sidebar ==========================================================================
-# ⤷ Konfiguration von Toleranzgrenzen zur Solltiefe und Maximalgeschwindigkeit (für spätere Filter/Visualisierung) 
-# Aufklappbarer Bereich für die Toleranzeinstellungen in der Sidebar
-with st.sidebar.expander("⚙️ Toleranzeinstellungen"):
-    toleranz_oben = st.slider("Obere Toleranz (m)", min_value=0.0, max_value=2.0, value=1.0, step=0.1)
-    toleranz_unten = st.slider("Untere Toleranz (m)", min_value=0.0, max_value=2.0, value=0.5, step=0.1)
-    max_geschwindigkeit = st.slider('Maximale Geschwindigkeit (in Knoten)', min_value=0.1, max_value=10.0, value=3.0, step=0.1)
+koordsys_status = st.sidebar.empty()  # <-- HIER DEFINIEREN!
 
 
 #=== Zeitliche Lücken erkennen und segmentieren (für Linienunterbrechungen) ======================================
@@ -97,9 +89,7 @@ if uploaded_mona_files:
     # Baggerfeld "0" oder leer entfernen
     df = df[~df["Baggerfeld"].isin(["", "0"])]
     
-    # Berechnung der Solltiefe und Toleranzkorridore
-    df = berechne_solltiefe(df, toleranz_oben, toleranz_unten)  # Hier Toleranzen übergeben!
-    
+  
     # Min und Max Zeit für den Zeitfilter-Slider
     min_time = df["timestamp"].min()
     max_time = df["timestamp"].max()
@@ -123,6 +113,24 @@ if uploaded_mona_files:
     **Baggerfelder:** {", ".join(sorted(df["Baggerfeld"].unique()))}  
     **Datenpunkte:** {len(df)}""")
 
+#=== Automatische Erkennung des Koordinatensystems (UTM, GK, RD) aus modul_koordinatenerkennung.py ========
+# ⤷ Basierend auf RW-/HW-Werten; bei Unsicherheit kann manuell gewählt werden
+    if 'df' in locals() and not df.empty:      # oder: if uploaded_mona_files:
+        proj_system, epsg_code, auto_erkannt = erkenne_koordinatensystem(
+            df, st=koordsys_status, sidebar=st.sidebar
+        )
+
+#=== Bedingungen / Parameter im Sidebar ==========================================================================
+# ⤷ Konfiguration von Toleranzgrenzen zur Solltiefe und Maximalgeschwindigkeit (für spätere Filter/Visualisierung) 
+# Aufklappbarer Bereich für die Toleranzeinstellungen in der Sidebar
+    with st.sidebar.expander("⚙️ Toleranzeinstellungen"):
+        toleranz_oben = st.slider("Obere Toleranz (m)", min_value=0.0, max_value=2.0, value=1.0, step=0.1)
+        toleranz_unten = st.slider("Untere Toleranz (m)", min_value=0.0, max_value=2.0, value=0.5, step=0.1)
+        max_geschwindigkeit = st.slider('Maximale Geschwindigkeit (in Knoten)', min_value=0.1, max_value=10.0, value=3.0, step=0.1)
+
+    # Berechnung der Solltiefe und Toleranzkorridore
+    df = berechne_solltiefe(df, toleranz_oben, toleranz_unten)  # Hier Toleranzen übergeben!
+
 #=== Multi-Select für Baggerfelder hinzufügen ============================================================
     with st.sidebar.expander("🔎 Filter nach Baggerfeld"):
         baggerfeld_auswahl = st.multiselect(
@@ -130,11 +138,6 @@ if uploaded_mona_files:
             options=sorted(df["Baggerfeld"].unique()), 
             default=sorted(df["Baggerfeld"].unique())  # Standardmäßig alle Baggerfelder
         )
-        
-#=== Automatische Erkennung des Koordinatensystems (UTM, GK, RD) aus modul_koordinatenerkennung.py ========
-# ⤷ Basierend auf RW-/HW-Werten; bei Unsicherheit kann manuell gewählt werden
-
-    proj_system, epsg_code, auto_erkannt = erkenne_koordinatensystem(df, st)
 
 
 #=== XML-Datei der Baggerfeldgrenzen (LandXML) parsen ============================================================

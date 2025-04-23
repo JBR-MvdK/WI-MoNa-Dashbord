@@ -1,4 +1,4 @@
-def erkenne_koordinatensystem(df, st=None):
+def erkenne_koordinatensystem(df, st=None, sidebar=None):
     rw_max = df["RW_Schiff"].dropna().astype(float).max()
     hw_max = df["HW_Schiff"].dropna().astype(float).max()
 
@@ -23,21 +23,21 @@ def erkenne_koordinatensystem(df, st=None):
         epsg_code = "EPSG:28992"
         auto_erkannt = True
 
-    if st:
+    if st:  # Platzhalter für Status (empty())
         if auto_erkannt:
-            st.sidebar.success(f"Automatisch erkannt: {proj_system} ({epsg_code})")
+            st.success(f"Automatisch erkannt: {proj_system} ({epsg_code})")
         else:
-            st.sidebar.warning("Koordinatensystem konnte nicht sicher erkannt werden.")
-            proj_system = st.sidebar.selectbox("Bitte Koordinatensystem auswählen", ["UTM", "Gauß-Krüger", "RD (Niederlande)"])
-
+            st.warning("Koordinatensystem konnte nicht sicher erkannt werden.")
+    if sidebar:  # Sidebar für Widgets
+        if not auto_erkannt:
+            proj_system = sidebar.selectbox("Bitte Koordinatensystem auswählen", ["UTM", "Gauß-Krüger", "RD (Niederlande)"])
             if proj_system == "UTM":
-                utm_zone = st.sidebar.selectbox("UTM-Zone", ["31", "32", "33", "34"], index=1)
+                utm_zone = sidebar.selectbox("UTM-Zone", ["31", "32", "33", "34"], index=1)
                 epsg_code = f"EPSG:258{utm_zone}"
             elif proj_system == "Gauß-Krüger":
-                gk_zone = st.sidebar.selectbox("GK-Zone", ["2", "3", "4", "5"], index=1)
+                gk_zone = sidebar.selectbox("GK-Zone", ["2", "3", "4", "5"], index=1)
                 epsg_code = f"EPSG:3146{gk_zone}"
             elif proj_system == "RD (Niederlande)":
                 epsg_code = "EPSG:28992"
-
     return proj_system, epsg_code, auto_erkannt
 
